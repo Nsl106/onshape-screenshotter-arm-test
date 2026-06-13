@@ -3,8 +3,8 @@
 # Your Onshape API keys are NOT here — they live in GitHub Actions secrets.
 
 [settings]
-image_width  = 1024           # px; Onshape's default is 128, far too small for a timelapse
-image_height = 1024           # px
+image_width  = 2048           # px; Onshape's default is 128, far too small for a timelapse
+image_height = 2048           # px
 view = "isometric"            # a named view, or 12 space-separated numbers for a view matrix
 timelapse_fps = 10            # frames per second in the rendered timelapse video
 
