@@ -28,7 +28,7 @@ This section updates itself each time frames are captured — one link per track
 document, pointing at its folder of frames.
 
 <!-- targets:start -->
-- [Chess / Part Studio 2](frames/c9383497bf0dec10f9ca0a16/) — 1 frame
+- [Chess / Part Studio 2](frames/c9383497bf0dec10f9ca0a16/) — 2 frames
 <!-- targets:end -->
 
 ## Setup (about 10 minutes)
