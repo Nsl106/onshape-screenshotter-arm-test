@@ -99,8 +99,8 @@ class Config:
 # Defaults applied when a key is absent from ``[settings]``. Mirrors the shipped
 # config.toml so an upgrade that adds a setting doesn't break an older file.
 _SETTINGS_DEFAULTS: dict[str, object] = {
-    "image_width": 1024,
-    "image_height": 1024,
+    "image_width": 2048,
+    "image_height": 2048,
     "view": "isometric",
     "timelapse_fps": 10,
     "keepalive": True,
