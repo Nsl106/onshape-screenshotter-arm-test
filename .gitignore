@@ -1,0 +1,10 @@
+# Local secrets — never commit. Onshape keys live here for local testing only.
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/

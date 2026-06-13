@@ -1,0 +1,82 @@
+# Scheduled forward capture: render each configured target's current state and
+# commit a new frame when it changed. Also runnable on demand.
+#
+# Third-party actions are GitHub-authored and pinned to a major version. For the
+# strictest auditing you may replace each "@v4"/"@v5" with a full commit SHA.
+name: Capture
+
+on:
+  schedule:
+    # Hourly heartbeat (UTC). This just wakes the job up; WHICH hours actually take
+    # a screenshot is set by `capture_hours` in config.toml (local time). Hourly is
+    # required so any local capture hour is covered regardless of your timezone.
+    # Off-hour runs exit before any Onshape call (they cost a little GitHub Actions
+    # time, well within the free tier, but ZERO Onshape API quota). Onshape caps API
+    # calls PER YEAR (Education ~2,500/yr); one call per capture hour per document,
+    # so the default 4 capture_hours ≈ 1,460/year. See the README "API budget".
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+# Allow the built-in GITHUB_TOKEN to push commits; no personal access token needed.
+permissions:
+  contents: write
+
+# Queue overlapping runs instead of racing them (don't cancel an in-flight commit).
+concurrency:
+  group: capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install .
+
+      - name: Capture frames
+        env:
+          ONSHAPE_ACCESS_KEY: ${{ secrets.ONSHAPE_ACCESS_KEY }}
+          ONSHAPE_SECRET_KEY: ${{ secrets.ONSHAPE_SECRET_KEY }}
+        run: python -m screenshotter.capture
+
+      - name: Commit and push new frames
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add README.md
+          [ -d frames ] && git add frames
+          [ -d state ] && git add state
+
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: capture frames"
+            # Survive a concurrent run that pushed between our checkout and now.
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push
+            exit 0
+          fi
+
+          # Nothing changed. Optional keepalive: if enabled and the last commit is
+          # older than ~50 days, commit a no-op so GitHub doesn't disable this
+          # scheduled workflow at the 60-day idle mark.
+          keepalive=$(python -c "from screenshotter.config import load_config; print('1' if load_config().settings.keepalive else '0')")
+          if [ "$keepalive" = "1" ]; then
+            last=$(git log -1 --format=%ct)
+            now=$(date -u +%s)
+            if [ $((now - last)) -gt 4320000 ]; then
+              mkdir -p .github
+              date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/.keepalive
+              git add .github/.keepalive
+              git commit -m "chore: keepalive (defeat 60-day scheduled-workflow disable)"
+              git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+              git push
+            fi
+          fi

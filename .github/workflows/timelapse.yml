@@ -1,0 +1,63 @@
+# Stitch committed frames into a timelapse video per target. Runs on demand, and
+# automatically after the capture job pushes new frames.
+#
+# Loop-safety: this workflow triggers on changes under frames/**, but its own
+# commit only touches timelapse/** — which does NOT match the path filter — so it
+# cannot retrigger itself. (ffmpeg is preinstalled on GitHub's Ubuntu runners.)
+name: Timelapse
+
+on:
+  workflow_dispatch:
+    inputs:
+      gif:
+        description: "Also render an animated .gif alongside the .mp4"
+        type: boolean
+        default: false
+  push:
+    paths:
+      - "frames/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: timelapse
+  cancel-in-progress: false
+
+jobs:
+  timelapse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install .
+
+      - name: Stitch timelapse
+        run: |
+          if [ "${{ inputs.gif }}" = "true" ]; then
+            python -m screenshotter.timelapse --gif
+          else
+            python -m screenshotter.timelapse
+          fi
+
+      - name: Commit and push timelapse
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Only timelapse/ is committed here, so this never matches frames/** and
+          # cannot trigger another Timelapse run.
+          [ -d timelapse ] && git add timelapse || exit 0
+
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: render timelapse"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push
+          fi
