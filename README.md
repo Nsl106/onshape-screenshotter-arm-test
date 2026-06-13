@@ -28,7 +28,7 @@ This section updates itself each time frames are captured — one link per track
 document, pointing at its folder of frames.
 
 <!-- targets:start -->
-_No frames captured yet. Run the Capture workflow to populate this._
+- [Chess / Part Studio 2](frames/c9383497bf0dec10f9ca0a16/) — 1 frame
 <!-- targets:end -->
 
 ## Setup (about 10 minutes)
