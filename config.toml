@@ -13,15 +13,15 @@ timelapse_fps = 10            # frames per second in the rendered timelapse vide
 # is your API budget dial: one Onshape call per hour listed (so the 4 below ≈ 1,460
 # calls/year — see the README "API budget"). An empty list [] pauses capture
 # entirely (no screenshots, no API calls).
-timezone = "UTC"                    # IANA timezone the hours below are in (e.g. "America/New_York")
-capture_hours = [8, 12, 16, 20]     # local hours to screenshot at
+timezone = "MST"                    # IANA timezone the hours below are in (e.g. "America/New_York")
+capture_hours = [8, 12, 16]         # local hours to screenshot at
 
 # keepalive: GitHub automatically DISABLES a scheduled workflow after 60 days with
 # no repo activity. During build season this never triggers (frames are committed
 # as your CAD changes), but in the quiet offseason it can. When true, the capture
 # workflow commits a tiny no-op file roughly monthly so the scheduled job keeps
 # running untouched. Set false if you'd rather re-enable Actions by hand each January.
-keepalive = true
+keepalive = false
 
 # One [[targets]] block per part studio or assembly you want to track.
 # Just paste the Onshape URL from your browser's address bar — the document,
@@ -29,7 +29,7 @@ keepalive = true
 # fetched from Onshape automatically. Frames are stored under the element id, and the
 # README's "Tracked CAD" section is updated with each target's fetched name and a link.
 [[targets]]
-url = "https://cad.onshape.com/documents/REPLACE_DID/w/REPLACE_WID/e/REPLACE_EID"
+url = "https://cad.onshape.com/documents/11a87ebbbbc92d872af88118/w/fc0ca9416b8038340e89aa99/e/c9383497bf0dec10f9ca0a16"
 
 # Add more targets by copying the block above:
 # [[targets]]
