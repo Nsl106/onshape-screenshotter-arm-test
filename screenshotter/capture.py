@@ -4,8 +4,10 @@ Each run renders every configured target's current workspace state in a single A
 call, then decides locally whether to keep the frame: if the rendered image matches
 the last one saved (same fingerprint), the CAD didn't change and nothing is written.
 So an unchanged run and a changed run both cost exactly one render call — the
-cheapest the tool can be against Onshape's tight annual quota. Runs whose hour
-isn't one of the configured capture hours are skipped before any API call at all.
+cheapest the tool can be against Onshape's tight annual quota. Each configured
+capture hour is serviced once per day by the first run at or after it (catch-up, so
+a dropped/late hourly run doesn't lose the screenshot); runs with nothing due skip
+before any API call at all.
 
 Targets are processed independently: one failing target never stops the others. Git
 commit/push is handled by the workflow, not here, so this script's only side effects
@@ -24,14 +26,15 @@ from pathlib import Path
 from . import frames, index
 from .config import Config, ConfigError, Target, load_config
 from .onshape import OnshapeAuthError, OnshapeClient, OnshapeError
-from .slots import should_capture, slot_key
+from .slots import due_capture_slot, slot_key
 from .state import State, read_state, state_path, write_state
 
 # Per-target outcomes, in the order they're reported on the one-line summary.
 CAPTURED = "captured"
 UNCHANGED = "unchanged"
 SLOT_FILLED = "skipped (slot filled)"
-OFF_HOURS = "skipped (not a capture hour)"
+OFF_HOURS = "skipped (no capture due)"
+ALREADY_DONE = "skipped (capture hour already done)"
 ERROR = "error"
 
 
@@ -77,39 +80,51 @@ def _process_target(
     now: datetime,
     root: Path,
     dry_run: bool,
+    due_target: str,
 ) -> TargetResult:
-    """Render one target's current state and save it iff it changed since last time.
+    """Service one target's currently-due capture and save it iff the CAD changed.
 
-    Spends a single render call, fingerprints the result, and writes a new frame
-    only when the fingerprint differs from the last saved one and the slot for this
-    hour isn't already filled (first-writer-wins).
+    Skips with no API call if this target already serviced ``due_target`` (so the
+    catch-up window is fulfilled once per capture hour per day). Otherwise spends a
+    single render call, fingerprints the result, and writes a frame only when it
+    differs from the last saved one and this hour's slot isn't already filled
+    (first-writer-wins). The serviced target is recorded either way, so a later run
+    in the same period won't re-render it.
     """
     eid = target.element_id
     state = read_state(state_path(eid, root))
-    _ensure_metadata(client, target, state)
+    if state.last_capture_target == due_target:
+        return TargetResult(eid, ALREADY_DONE, due_target)
 
+    _ensure_metadata(client, target, state)
     png = client.render_shaded_view(
         target, state.element_type, view=view, width=width, height=height
     )
     fingerprint = frames.image_fingerprint(png)
-    if fingerprint == state.last_image_hash:
-        return TargetResult(eid, UNCHANGED)
-
     slot = slot_key(now)
-    if frames.exists(eid, slot, root):
-        return TargetResult(eid, SLOT_FILLED, slot)
+    changed = fingerprint != state.last_image_hash
 
     if dry_run:
+        if not changed:
+            return TargetResult(eid, UNCHANGED, "(dry-run)")
+        if frames.exists(eid, slot, root):
+            return TargetResult(eid, SLOT_FILLED, f"{slot} (dry-run)")
         return TargetResult(eid, CAPTURED, f"{slot} (dry-run, not written)")
 
-    if not frames.write_frame(eid, slot, png, root):
-        # Another writer filled the slot between the check and now — respect it.
-        return TargetResult(eid, SLOT_FILLED, slot)
-
-    state.last_image_hash = fingerprint
-    state.last_captured_at = now.isoformat()
+    # Mark this capture hour serviced regardless of outcome, so the rest of the
+    # period's runs skip it instead of re-rendering.
+    state.last_capture_target = due_target
+    result = TargetResult(eid, UNCHANGED)
+    if changed:
+        if frames.write_frame(eid, slot, png, root):
+            state.last_image_hash = fingerprint
+            state.last_captured_at = now.isoformat()
+            result = TargetResult(eid, CAPTURED, slot)
+        else:
+            # Another writer filled the slot between the check and now — respect it.
+            result = TargetResult(eid, SLOT_FILLED, slot)
     write_state(state_path(eid, root), state)
-    return TargetResult(eid, CAPTURED, slot)
+    return result
 
 
 def run(
@@ -122,16 +137,17 @@ def run(
 ) -> list[TargetResult]:
     """Process every target as of ``now`` and return per-target results.
 
-    If ``now``'s local hour isn't one of the configured capture hours, every target
-    is skipped without any API call. Otherwise each target is isolated in its own
-    try/except so one failure can't abort the rest, and the README index is
-    refreshed once at the end (unless this is a dry run with no captures).
+    If no capture hour is due yet (or capture is paused), every target is skipped
+    without any API call. Otherwise each target is isolated in its own try/except so
+    one failure can't abort the rest, and the README index is refreshed once at the
+    end (unless this is a dry run with no captures).
     """
     root = Path(root)
     now = now or datetime.now(UTC)
     settings = config.settings
 
-    if not should_capture(now, settings.timezone, settings.capture_hours):
+    due_target = due_capture_slot(now, settings.timezone, settings.capture_hours)
+    if due_target is None:
         return [TargetResult(t.element_id, OFF_HOURS) for t in config.targets]
 
     results: list[TargetResult] = []
@@ -147,6 +163,7 @@ def run(
                     now,
                     root,
                     dry_run,
+                    due_target,
                 )
             )
         except OnshapeError as exc:

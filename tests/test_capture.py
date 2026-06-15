@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from screenshotter import frames
 from screenshotter.capture import (
+    ALREADY_DONE,
     CAPTURED,
     ERROR,
     OFF_HOURS,
@@ -154,7 +155,7 @@ def test_changed_but_slot_filled_skips(tmp_path) -> None:
 
 def test_off_capture_hour_skips_with_zero_calls(tmp_path) -> None:
     client = FakeClient()
-    # Capture hours 8/12/16/20; run at 04:00 -> not a capture hour, no calls at all.
+    # Capture hours 8/12/16/20; run at 04:00 -> none due yet today, no calls at all.
     [result] = run(
         _config(capture_hours=(8, 12, 16, 20)),
         client,
@@ -175,6 +176,56 @@ def test_on_capture_hour_runs(tmp_path) -> None:
         root=tmp_path,
     )
     assert result.status == CAPTURED
+
+
+def test_catch_up_fires_after_a_missed_hour(tmp_path) -> None:
+    # GitHub never fired during the 08:00 hour; the next run at 10:30 still captures.
+    client = FakeClient()
+    [result] = run(
+        _config(capture_hours=(8, 12, 16)),
+        client,
+        now=_utc(2024, 1, 5, 10, 30),
+        root=tmp_path,
+    )
+    assert result.status == CAPTURED
+    assert client.rendered == 1
+    # The serviced capture hour is recorded as the 08 slot it caught up.
+    assert read_state(state_path("E1", tmp_path)).last_capture_target == "2024-01-05:08"
+
+
+def test_already_serviced_hour_skips_without_call(tmp_path) -> None:
+    # State already shows the 12 slot done today -> later runs that period skip free.
+    write_state(
+        state_path("E1", tmp_path),
+        State(last_capture_target="2024-01-05:12", element_type="assembly"),
+    )
+    client = FakeClient()
+    [result] = run(
+        _config(capture_hours=(8, 12, 16)),
+        client,
+        now=_utc(2024, 1, 5, 13),
+        root=tmp_path,
+    )
+    assert result.status == ALREADY_DONE
+    assert client.rendered == 0
+    assert client.metadata_calls == 0
+
+
+def test_next_capture_hour_renders_again(tmp_path) -> None:
+    # Having done the 08 slot, a run at 12:xx services the new 12 slot.
+    write_state(
+        state_path("E1", tmp_path),
+        State(last_capture_target="2024-01-05:08", element_type="assembly"),
+    )
+    client = FakeClient(image=b"NEW")
+    [result] = run(
+        _config(capture_hours=(8, 12, 16)),
+        client,
+        now=_utc(2024, 1, 5, 12, 5),
+        root=tmp_path,
+    )
+    assert result.status == CAPTURED
+    assert read_state(state_path("E1", tmp_path)).last_capture_target == "2024-01-05:12"
 
 
 def test_dry_run_writes_nothing(tmp_path) -> None:

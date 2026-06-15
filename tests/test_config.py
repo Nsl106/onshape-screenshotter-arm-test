@@ -73,7 +73,7 @@ def test_settings_defaults_applied_when_absent() -> None:
     del data["settings"]
     cfg = parse_config(data)
     # Defaults mirror the shipped config.toml.
-    assert cfg.settings.image_width == 1024
+    assert cfg.settings.image_width == 2048
     assert cfg.settings.view == "isometric"
     assert cfg.settings.timelapse_fps == 10
     assert cfg.settings.keepalive is True

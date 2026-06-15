@@ -25,6 +25,9 @@ class State:
         last_image_hash: Fingerprint of the most recently saved frame, or None on
             first run. A run compares the freshly rendered image against this to
             decide whether the CAD changed.
+        last_capture_target: Id (``"<date>:<hour>"``) of the most recent capture
+            hour this target has already serviced, so later runs in the same period
+            don't render it again. None until the first capture.
         last_captured_at: ISO-8601 UTC timestamp of the last capture (for humans).
         element_type: Cached ``"assembly"``/``"partstudio"`` from element metadata.
         display_name: Cached element (tab) name for the README index.
@@ -32,6 +35,7 @@ class State:
     """
 
     last_image_hash: str | None = None
+    last_capture_target: str | None = None
     last_captured_at: str | None = None
     element_type: str | None = None
     display_name: str | None = None

@@ -1,8 +1,8 @@
 """Pure time/slot logic for the capture job. No I/O, no network — unit-testable.
 
-Provides the canonical slot key for an instant, plus the capture-hours gate that
-lets the scheduled job decide whether the current hour is one the team asked to
-screenshot at (and otherwise skip, spending zero API calls).
+Provides the canonical slot key for an instant, plus the capture-hours gate: it
+tells the scheduled job which capture is currently due (catching up a missed hour
+on the next run), so it knows whether to spend an API call or skip.
 """
 
 from __future__ import annotations
@@ -50,16 +50,26 @@ def resolve_timezone(name: str) -> tzinfo:
         raise ValueError(f"unknown timezone '{name}'") from exc
 
 
-def should_capture(now: datetime, tz_name: str, capture_hours: Iterable[int]) -> bool:
-    """Return True if ``now``'s local hour is one the team wants a screenshot at.
+def due_capture_slot(
+    now: datetime, tz_name: str, capture_hours: Iterable[int]
+) -> str | None:
+    """Return an id for the capture that is due as of ``now``, or None if none is.
 
-    ``capture_hours`` is a set of local hours (0-23) interpreted in ``tz_name``. An
-    empty collection means "take no screenshots" — capture is paused, no API calls.
-    The scheduled workflow wakes hourly and calls this to decide whether to spend a
-    call.
+    ``capture_hours`` are local hours (0-23) in ``tz_name``. The returned id is
+    ``"<local-date>:<hour>"`` for the *latest* capture hour that has already arrived
+    today (e.g. ``"2026-06-15:16"``). The caller records the id it last serviced, so
+    each capture hour is fulfilled once per day by the first run at or after it —
+    even if GitHub's scheduler drops the run that fell exactly in that hour. This
+    catch-up is what keeps a flaky hourly cron from silently missing screenshots.
+
+    Returns None when capture is paused (empty list) or no capture hour has arrived
+    yet today.
     """
-    hours = set(capture_hours)
+    hours = sorted(set(capture_hours))
     if not hours:
-        return False
-    local_hour = _to_utc(now).astimezone(resolve_timezone(tz_name)).hour
-    return local_hour in hours
+        return None
+    local = _to_utc(now).astimezone(resolve_timezone(tz_name))
+    arrived = [h for h in hours if h <= local.hour]
+    if not arrived:
+        return None
+    return f"{local.date().isoformat()}:{max(arrived):02d}"

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from screenshotter.slots import resolve_timezone, should_capture, slot_key
+from screenshotter.slots import due_capture_slot, resolve_timezone, slot_key
 
 
 def _utc(y, mo, d, h=0, mi=0) -> datetime:
@@ -55,25 +55,31 @@ def test_resolve_bad_zone_raises() -> None:
         resolve_timezone("Mars/Olympus_Mons")
 
 
-# --- should_capture -------------------------------------------------------------
+# --- due_capture_slot -----------------------------------------------------------
 
 
-def test_capture_only_at_listed_hours() -> None:
-    hours = [8, 12, 16, 20]
-    assert should_capture(_utc(2024, 1, 5, 12), "UTC", hours) is True
-    assert should_capture(_utc(2024, 1, 5, 8), "UTC", hours) is True
-    assert should_capture(_utc(2024, 1, 5, 13), "UTC", hours) is False
-    assert should_capture(_utc(2024, 1, 5, 0), "UTC", hours) is False
+def test_due_slot_at_a_capture_hour() -> None:
+    # Exactly on 12:00 -> the 12 slot is due.
+    assert due_capture_slot(_utc(2024, 1, 5, 12), "UTC", [8, 12, 16]) == "2024-01-05:12"
 
 
-def test_empty_capture_hours_means_never() -> None:
-    # Empty list pauses capture entirely — no screenshot at any hour.
-    assert should_capture(_utc(2024, 1, 5, 3), "UTC", []) is False
-    assert should_capture(_utc(2024, 1, 5, 17), "UTC", ()) is False
+def test_due_slot_catches_up_a_missed_hour() -> None:
+    # No run fired at 08:00; the next run at 10:xx still owes the 08 slot.
+    assert due_capture_slot(_utc(2024, 1, 5, 10), "UTC", [8, 12, 16]) == "2024-01-05:08"
+    # Late single run sees only the latest due hour, not every earlier one.
+    assert due_capture_slot(_utc(2024, 1, 5, 17), "UTC", [8, 12, 16]) == "2024-01-05:16"
 
 
-def test_capture_hours_respect_timezone() -> None:
-    # 13:00 UTC is 08:00 in New York; an 08:00-Eastern capture hour should fire.
-    assert should_capture(_utc(2024, 1, 5, 13), "America/New_York", [8]) is True
-    # 12:00 UTC is 07:00 Eastern -> not a capture hour.
-    assert should_capture(_utc(2024, 1, 5, 12), "America/New_York", [8]) is False
+def test_due_slot_none_before_first_hour() -> None:
+    assert due_capture_slot(_utc(2024, 1, 5, 6), "UTC", [8, 12, 16]) is None
+
+
+def test_due_slot_none_when_paused() -> None:
+    assert due_capture_slot(_utc(2024, 1, 5, 17), "UTC", []) is None
+
+
+def test_due_slot_respects_timezone_and_local_date() -> None:
+    # 02:00 UTC on the 6th is 21:00 Eastern on the 5th; with a 20:00 capture hour
+    # the due slot is dated by the *local* day.
+    due = due_capture_slot(_utc(2024, 1, 6, 2), "America/New_York", [20])
+    assert due == "2024-01-05:20"
