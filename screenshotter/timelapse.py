@@ -183,8 +183,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if shutil.which("ffmpeg") is None:
         print(
-            "ffmpeg was not found on PATH. Install ffmpeg (it is preinstalled on "
-            "GitHub Ubuntu runners; see the README for local install).",
+            "ffmpeg was not found on PATH. Install it (Ubuntu: "
+            "'sudo apt install ffmpeg', macOS: 'brew install ffmpeg'); the Timelapse "
+            "workflow installs it automatically.",
             file=sys.stderr,
         )
         return 1

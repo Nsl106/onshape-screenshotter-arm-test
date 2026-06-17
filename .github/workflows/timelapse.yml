@@ -3,7 +3,8 @@
 #
 # Loop-safety: this workflow triggers on changes under frames/**, but its own
 # commit only touches timelapse/** — which does NOT match the path filter — so it
-# cannot retrigger itself. (ffmpeg is preinstalled on GitHub's Ubuntu runners.)
+# cannot retrigger itself. (ffmpeg is installed below: GitHub's Ubuntu image no
+# longer ships it.)
 name: Timelapse
 
 on:
@@ -34,6 +35,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install
         run: pip install .
